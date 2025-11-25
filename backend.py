@@ -140,7 +140,7 @@ def _scan_horizontal_blocks_dynamic(ws):
             return None, blocks
         
         # El header suele estar arriba de la fila Base
-        header_row = base_row_B - 1
+        header_row = base_row_B - 2
         max_col = ws.max_column
         
         # Crear un solo bloque con todas las columnas desde START_COL
@@ -184,70 +184,40 @@ def _winners_label_from_names(winners_mask, names):
 def _compute_winners_for_concept_block(ws, topR: int, cols: list, letters: list, names: list, base_min: float = BASE_MIN) -> str:
     S = len(cols)
 
-    # <<< FIX NUEVO: si solo hay un segmento → no hay ganador >>>
+    # Si solo hay un segmento → no hay ganador
     if S <= 1:
         return "(Sin ganadores)"
 
-    base_ok = []
-    for idx in range(S):
-        n_val = _parse_float_safe(ws.cell(topR, cols[idx]).value)
-        
-        # Si n_val es None, puede ser Grid - buscar en fila Base de columna B
-        if n_val is None:
-            # Buscar la fila Base más cercana hacia arriba desde topR
-            base_row = None
-            for r in range(topR, 0, -1):
-                if _is_base_label(ws.cell(r, 2).value):
-                    base_row = r
-                    break
-            
-            if base_row:
-                # En Grid, los valores de N están en la fila Base
-                n_val = _parse_float_safe(ws.cell(base_row, cols[idx]).value)
-        
-        base_ok.append(n_val is not None and n_val >= base_min)
-
+    print(f"\n=== DEBUG: topR={topR}, cols={cols}, letters={letters}, names={names} ===")
+    
+    # Leer DS de todas las columnas (sin filtrar por base)
     beats = [[False] * S for _ in range(S)]
     for i in range(S):
-        # Solo procesar si tiene base OK
-        if not base_ok[i]:
-            continue
-            
         ds_txt = _norm(ws.cell(topR + 2, cols[i]).value).lower()
+        print(f"  Col {cols[i]} ({names[i]}): DS='{ds_txt}'")
+        
         for j in range(S):
             if i == j:
-                continue
-            # Solo comparar con segmentos que tienen base OK
-            if not base_ok[j]:
                 continue
             lj = letters[j] if j < len(letters) else ""
             if lj and lj in ds_txt:
                 beats[i][j] = True
 
-    # Contar cuántos segmentos tienen base OK
-    valid_segments = sum(base_ok)
-    
-    # Si hay menos de 2 segmentos válidos, no hay ganadores
-    if valid_segments < 2:
-        return "(Sin ganadores)"
-
+    # Buscar ganador único: gana a todos los demás
     winners = [False] * S
     for i in range(S):
-        # Solo puede ganar si tiene base OK
-        if not base_ok[i]:
-            continue
-        # Debe ganarle a TODOS los otros que tienen base OK
-        if all(i == j or not base_ok[j] or beats[i][j] for j in range(S)):
+        if all(i == j or beats[i][j] for j in range(S)):
             winners[i] = True
+    
     if any(winners):
         return _winners_label_from_names(winners, names)
 
+    # Buscar ganadores múltiples (empate + dominan a los externos)
     max_k = min(MAX_SET, max(1, S - 1))
     for k in range(2, max_k + 1):
         for combo in combinations(range(S), k):
-            if not all(base_ok[i] for i in combo):
-                continue
             ok = True
+            # Consistencia interna: no se ganan entre ellos
             for a in combo:
                 for b in combo:
                     if a != b and beats[a][b]:
@@ -257,6 +227,8 @@ def _compute_winners_for_concept_block(ws, topR: int, cols: list, letters: list,
                     break
             if not ok:
                 continue
+            
+            # Dominancia externa: todos ganan a todos los externos
             for ext in range(S):
                 if ext in combo:
                     continue
@@ -266,6 +238,7 @@ def _compute_winners_for_concept_block(ws, topR: int, cols: list, letters: list,
                         break
                 if not ok:
                     break
+            
             if ok:
                 winners = [i in combo for i in range(S)]
                 return _winners_label_from_names(winners, names)
