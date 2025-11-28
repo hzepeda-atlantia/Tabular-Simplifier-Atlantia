@@ -391,8 +391,8 @@ def apply_global_rules(rows: List[Dict]) -> List[Dict]:
         c = row.get("concepto", "")
         # Procesar todas las preguntas, no solo las que empiezan con P
         # (comentado el filtro restrictivo)
-        # if not _starts_with_pnum(p):
-        #     continue
+        # Procesar todas las preguntas, no solo las que empiezan con P
+        # (Filtro eliminado para incluir todas las preguntas)
         c_norm = _norm(c)
         if c_norm.lower() == "media":
             continue
@@ -523,24 +523,9 @@ def apply_styles(writer, sheet_name, df):
             worksheet.set_column(i, i, 15, text_fmt)
     
     # --- Formato Condicional para Ganadores (DS/Concatenado) ---
-    # Resaltar celdas que contienen el símbolo de ganador "▲"
-    if 'ds' in col_indices:
-        ds_col = col_indices['ds']
-        worksheet.conditional_format(1, ds_col, max_row, ds_col, {
-            'type': 'text',
-            'criteria': 'containing',
-            'value': '▲',
-            'format': winner_fmt
-        })
-    
-    if 'concatenado' in col_indices:
-        concat_col = col_indices['concatenado']
-        worksheet.conditional_format(1, concat_col, max_row, concat_col, {
-            'type': 'text',
-            'criteria': 'containing',
-            'value': '▲',
-            'format': winner_fmt
-        })
+    # (Eliminado a petición del usuario para facilitar copy-paste)
+    # if 'ds' in col_indices: ...
+    pass
 
 # ---------- PDP utils ----------
 def filter_rows_by_range(rows: List[Dict], p_ini: str, p_fin: str) -> List[Dict]:
@@ -600,7 +585,13 @@ def process_workbook_by_pdp(
     for tname, ws in ws_map.items():
         rows = extract_rows_from_ws(ws, base_min=base_min)
         # Excluir filas con base menor al umbral (excepto Grid donde no hay 'n')
-        rows = [r for r in rows if ("n" not in r) or (r.get("n", 0) >= base_min)]
+        # CAMBIO: No filtrar filas, solo borrar DS si n < base_min
+        # rows = [r for r in rows if ("n" not in r) or (r.get("n", 0) >= base_min)]
+        
+        for r in rows:
+            if "n" in r and r.get("n", 0) < base_min:
+                r["DS"] = ""
+        
         rows = apply_global_rules(rows)
         extracted[tname] = rows
 
