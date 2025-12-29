@@ -183,67 +183,67 @@ def _winners_label_from_names(winners_mask, names):
 
 def _compute_winners_for_concept_block(ws, topR: int, cols: list, letters: list, names: list, base_min: float = BASE_MIN) -> str:
     S = len(cols)
-
-    # Si solo hay un segmento → no hay ganador
-    if S <= 1:
-        return "(Sin ganadores)"
-
     print(f"\n=== DEBUG: topR={topR}, cols={cols}, letters={letters}, names={names} ===")
     
-    # Leer DS de todas las columnas (sin filtrar por base)
-    beats = [[False] * S for _ in range(S)]
+    # 1. Identificar segmentos válidos (Base >= min)
+    valid_indices = []
+    
     for i in range(S):
-        ds_txt = _norm(ws.cell(topR + 2, cols[i]).value).lower()
-        print(f"  Col {cols[i]} ({names[i]}): DS='{ds_txt}'")
+        base_cell_val = ws.cell(topR, cols[i]).value
+        n_val = _to_number_pct(base_cell_val)
+        n_val = float(n_val) if n_val is not None else 0.0
         
-        for j in range(S):
+        ds_txt = _norm(ws.cell(topR + 2, cols[i]).value).lower()
+        
+        if n_val >= base_min:
+            valid_indices.append(i)
+            print(f"  Col {cols[i]} ({names[i]}): n={n_val} (VALIDO) | DS='{ds_txt}'")
+        else:
+            print(f"  Col {cols[i]} ({names[i]}): n={n_val} (<{base_min}) -> INVALIDO (No compite)")
+
+    N = len(valid_indices)
+    
+    # 2. Competencia Mínima: Al menos 2 validos
+    if N < 2:
+        print("  -> Menos de 2 competidores validos. Sin ganadores.")
+        return "(Sin ganadores)"
+
+    # 3. Calcular Umbral de Victorias
+    # "ganarle a piso de n/2" ... "tiene que competir con almenos uno valido y ganarle"
+    threshold = N // 2
+    min_wins = max(1, threshold)
+    
+    print(f"  -> Competidores Validos: {N} | Umbral Victorias: {min_wins} (floor({N}/2))")
+    
+    final_winners = []
+    
+    # 4. Determinar Ganadores
+    for i in valid_indices:
+        ds_txt = _norm(ws.cell(topR + 2, cols[i]).value).lower()
+        wins = 0
+        
+        # Debe ganar a otros VALIDOS
+        for j in valid_indices:
             if i == j:
                 continue
-            lj = letters[j] if j < len(letters) else ""
-            if lj and lj in ds_txt:
-                beats[i][j] = True
-
-    # Buscar ganador único: gana a todos los demás
-    winners = [False] * S
-    for i in range(S):
-        if all(i == j or beats[i][j] for j in range(S)):
-            winners[i] = True
-    
-    if any(winners):
-        return _winners_label_from_names(winners, names)
-
-    # Buscar ganadores múltiples (empate + dominan a los externos)
-    max_k = min(MAX_SET, max(1, S - 1))
-    for k in range(2, max_k + 1):
-        for combo in combinations(range(S), k):
-            ok = True
-            # Consistencia interna: no se ganan entre ellos
-            for a in combo:
-                for b in combo:
-                    if a != b and beats[a][b]:
-                        ok = False
-                        break
-                if not ok:
-                    break
-            if not ok:
-                continue
             
-            # Dominancia externa: todos ganan a todos los externos
-            for ext in range(S):
-                if ext in combo:
-                    continue
-                for a in combo:
-                    if not beats[a][ext]:
-                        ok = False
-                        break
-                if not ok:
-                    break
+            # Verificar si i le gana a j
+            letter_j = letters[j] if j < len(letters) else ""
             
-            if ok:
-                winners = [i in combo for i in range(S)]
-                return _winners_label_from_names(winners, names)
+            # Condicion de victoria: tener la letra del oponente en tu DS
+            if letter_j and letter_j in ds_txt:
+                wins += 1
+        
+        if wins >= min_wins:
+            print(f"  -> {names[i]} tiene {wins} victorias (>= {min_wins}). ES GANADOR.")
+            final_winners.append(names[i])
+        else:
+            print(f"  -> {names[i]} tiene {wins} victorias (< {min_wins}). No gana.")
 
-    return "(Sin ganadores)"
+    if not final_winners:
+        return "(Sin ganadores)"
+        
+    return ", ".join(final_winners)
 
 # ---------- DS CONCATEANDO ----------
 def build_ds_concat_map_for_ws(ws, base_min: float = BASE_MIN) -> dict:
@@ -306,7 +306,10 @@ def build_ds_concat_map_for_ws(ws, base_min: float = BASE_MIN) -> dict:
     return ds_concat
 
 # ---------- Extracción filas ----------
+    return rows
+
 def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
+    print(f"\n[DEBUG] >>> INICIO ESCANEO HOJA: {ws.title} <<<")
     rows = []
     ds_concat_map = build_ds_concat_map_for_ws(ws, base_min=base_min)
 
@@ -317,6 +320,7 @@ def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
         # GRID: Buscar Base en columna B
         first_base_B = _find_first_base_in_col(ws, 2)
         if first_base_B is None:
+            print(f"[DEBUG] Hoja {ws.title}: No se encontró Base en Col B (Grid). Saltando.")
             return rows
         probe_row = first_base_B
     else:
@@ -330,6 +334,7 @@ def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
             start_block_row = r
             break
     if start_block_row is None:
+        print(f"[DEBUG] Hoja {ws.title}: No se encontró inicio de bloque de conceptos.")
         return rows
 
     current_base_row = start_block_row
@@ -338,6 +343,7 @@ def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
         end_row_exclusive = next_base_row if next_base_row else (ws.max_row + 1)
 
         pregunta = _norm(ws.cell(current_base_row, 1).value)
+        # print(f"[DEBUG] Bloque Pregunta: {pregunta}")
 
         r = current_base_row + 1
         while r < end_row_exclusive:
@@ -352,6 +358,7 @@ def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
             
             if is_grid:
                 # GRID: Solo pregunta, concepto, DS
+                print(f"[DEBUG] [GRID] Leído: P='{pregunta}' | C='{concepto}'")
                 rows.append({
                     "pregunta": pregunta,
                     "concepto": concepto,
@@ -369,6 +376,8 @@ def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
                     parsed = _to_number_pct(ws.cell(pr, 4).value)
                     porcentaje = float(parsed) if parsed is not None else 0.0
 
+                print(f"[DEBUG] [DATA] Leído: P='{pregunta}' | C='{concepto}' | n={n_val}")
+
                 rows.append({
                     "pregunta": pregunta,
                     "concepto": concepto,
@@ -381,6 +390,7 @@ def extract_rows_from_ws(ws, base_min: float = BASE_MIN) -> List[Dict]:
 
         current_base_row = next_base_row
 
+    print(f"[DEBUG] <<< FIN HOJA {ws.title}: {len(rows)} filas extraídas. >>>\n")
     return rows
 
 # ---------- Reglas globales ----------
