@@ -19,6 +19,14 @@ load_css("styles.css")
 # --- Header ---
 st.markdown('<h1 style="text-align: center; margin-bottom: 2rem;">📊 <span class="gradient-text">Tabular Simplifier</span></h1>', unsafe_allow_html=True)
 
+# --- Explanation ---
+st.info(
+    "**Criterio para Marcar Diferencias Significativas:**  \n"
+    "Las diferencias se calculan y resaltan cuando un dato cumple con las siguientes condiciones:  \n"
+    "1.  **Base Mínima:** El grupo cuenta con el número suficiente de respuestas para ser considerado válido.  \n"
+    "2.  **Diferencia Estadística:** El dato es significativamente mayor que al menos **la mitad** de los demás grupos válidos."
+)
+
 # --- Sidebar ---
 with st.sidebar:
     st.image("assets/logo.png", use_container_width=True)
